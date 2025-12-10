@@ -1,4 +1,6 @@
-use crate::bareun::DictSet;
+use crate::bareun::{CustomDictionary, DictSet};
+use crate::custom_dict_client::CustomDictionaryServiceClient;
+use crate::error::{BareunError, Result};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -9,7 +11,7 @@ Args:
     user_dict_path (str): 사용자 사전 파일 이름
 
 Returns:
-    HashSet<String>: 사용자 사전을 HashSet 형식으로 만들어서 돌려줍니다.
+    `HashSet<String>`: 사용자 사전을 HashSet 형식으로 만들어서 돌려줍니다.
 */
 pub fn read_dic_file(user_dict_path: &str) -> HashSet<String> {
     let mut dict_set = HashSet::new();
@@ -34,7 +36,7 @@ Args:
     ds (&DictSet): DictSet 객체
 
 Returns:
-    HashSet<String>: 중복이 없는 사전 객체
+    `HashSet<String>`: 중복이 없는 사전 객체
 */
 pub fn pb_map_to_set(ds: &DictSet) -> HashSet<String> {
     let mut ret = HashSet::new();
@@ -43,39 +45,48 @@ pub fn pb_map_to_set(ds: &DictSet) -> HashSet<String> {
     }
     ret
 }
-/**
-    사용자 사전을 쉽게 사용하도록 해주는 래퍼(wrapper).
-    'CustomDict' .
-:ref:`optional-installations`.
- .. code-block:: rust
-     :emphasize-lines: 1
-     >>> use bareunpy::{Tagger, CustomDict};
-     >>> use std::collections::HashSet;
-     >>> let mut tagger = Tagger::new("YOUR_API_KEY", "HOST", 5656, "");
-     >>> let mut cd = tagger.custom_dict("law");
-     >>> // or
-     >>> let mut cd = CustomDict::new("law");
-     >>> cd.read_cp_set_from_file("my_np_set.txt");
-     >>> let cp_set = vec!["새단어".to_string(), "코로나19".to_string(), "K방역".to_string()];
-     >>> cd.copy_cp_set(cp_set.into_iter().collect());
-     >>> cd.read_cp_caret_set_from_file("my_cp_caret.txt");
-     >>> let vv_set = vec!["카톡하".to_string(), "신박하다".to_string()];
-     >>> cd.copy_vv_set(vv_set.into_iter().collect());
-     >>> let va_set = vec!["드라마틱하".to_string(), "판타스틱하".to_string()];
-     >>> cd.copy_va_set(va_set.into_iter().collect());
-     >>> cd.update();
-     >>> // copy data from server
-     >>> let mut cd2 = tagger.custom_dict("law");
-     >>> let custom_dict = cd2.get();
-     >>> // cd2.save(dir="my_dir");
-
-    사용자 사전 래퍼(wrapper)의 생성자
-
-    Args:
-        domain (str): 사용자 사전의 이름, 반드시 지정되어야 합니다.
-    Raises:
-        ValueError: 사용자 사전의 이름이 없으면 에러를 발생시킵니다.
-*/
+/// 사용자 사전을 쉽게 사용하도록 해주는 래퍼(wrapper).
+///
+/// # Examples
+///
+/// ```rust
+/// use bareun_rs::{Tagger, CustomDict};
+/// use std::collections::HashSet;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let mut tagger = Tagger::new("YOUR_API_KEY", "api.bareun.ai", Some(443), vec![]).await?;
+///     let cd = tagger.custom_dict("law");
+///
+///     // 복합명사 추가
+///     let cp_set = vec!["새단어".to_string(), "코로나19".to_string(), "K방역".to_string()];
+///     cd.copy_cp_set(cp_set.into_iter().collect());
+///
+///     // 복합명사 (캐럿 구분) 추가
+///     cd.read_cp_caret_set_from_file("my_cp_caret.txt")?;
+///
+///     // 동사 추가
+///     let vv_set = vec!["카톡하".to_string(), "신박하다".to_string()];
+///     cd.copy_vv_set(vv_set.into_iter().collect());
+///
+///     // 형용사 추가
+///     let va_set = vec!["드라마틱하".to_string(), "판타스틱하".to_string()];
+///     cd.copy_va_set(va_set.into_iter().collect());
+///
+///     // 서버에 업데이트
+///     cd.update().await?;
+///
+///     Ok(())
+/// }
+/// ```
+///
+/// # Arguments
+///
+/// * `domain` - 사용자 사전의 이름, 반드시 지정되어야 합니다.
+///
+/// # Panics
+///
+/// 사용자 사전의 이름이 없으면 에러를 발생시킵니다.
 pub struct CustomDict {
     pub domain: String,
     pub cp_set: HashSet<String>,
@@ -83,6 +94,9 @@ pub struct CustomDict {
     pub cp_caret_set: HashSet<String>,
     pub vv_set: HashSet<String>,
     pub va_set: HashSet<String>,
+    pub apikey: String,
+    pub host: String,
+    pub port: i32,
 }
 impl CustomDict {
     pub fn new(domain: &str) -> Self {
@@ -97,7 +111,34 @@ impl CustomDict {
             cp_caret_set: HashSet::new(),
             vv_set: HashSet::new(),
             va_set: HashSet::new(),
+            apikey: String::new(),
+            host: String::new(),
+            port: 0,
         }
+    }
+
+    pub fn with_connection(domain: &str, apikey: &str, host: &str, port: i32) -> Self {
+        if domain.is_empty() {
+            panic!("domain name must be specified.");
+        }
+
+        CustomDict {
+            domain: domain.to_string(),
+            cp_set: HashSet::new(),
+            np_set: HashSet::new(),
+            cp_caret_set: HashSet::new(),
+            vv_set: HashSet::new(),
+            va_set: HashSet::new(),
+            apikey: apikey.to_string(),
+            host: host.to_string(),
+            port,
+        }
+    }
+
+    pub fn set_connection(&mut self, apikey: &str, host: &str, port: i32) {
+        self.apikey = apikey.to_string();
+        self.host = host.to_string();
+        self.port = port;
     }
     /**
     고유명사 사전을 파일에서 읽어들입니다.
@@ -158,7 +199,7 @@ impl CustomDict {
     집합을 고유명사 사전으로 지정합니다.
 
     Args:
-        dict_set (HashSet<String>): 고유명사 사전
+        dict_set (`HashSet<String>`): 고유명사 사전
     */
     pub fn copy_np_set(&mut self, dict_set: HashSet<String>) {
         self.np_set = dict_set;
@@ -167,7 +208,7 @@ impl CustomDict {
     집합을 복합명사 사전으로 지정합니다.
 
     Args:
-        dict_set (HashSet<String>): 복합명사 사전
+        dict_set (`HashSet<String>`): 복합명사 사전
     */
     pub fn copy_cp_set(&mut self, dict_set: HashSet<String>) {
         self.cp_set = dict_set;
@@ -176,7 +217,7 @@ impl CustomDict {
     집합을 복합명사 분리 사전으로 지정합니다.
 
     Args:
-        dict_set (HashSet<String>): 복합명사 분리 사전
+        dict_set (`HashSet<String>`): 복합명사 분리 사전
     */
     pub fn copy_cp_caret_set(&mut self, dict_set: HashSet<String>) {
         self.cp_caret_set = dict_set;
@@ -185,7 +226,7 @@ impl CustomDict {
     집합을 동사 사전으로 지정합니다.
 
     Args:
-        dict_set (HashSet<String>): 동사 사전
+        dict_set (`HashSet<String>`): 동사 사전
     */
     pub fn copy_vv_set(&mut self, dict_set: HashSet<String>) {
         self.vv_set = dict_set;
@@ -194,23 +235,41 @@ impl CustomDict {
     집합을 형용사 사전으로 지정합니다.
 
     Args:
-        dict_set (HashSet<String>): 형용사 사전
+        dict_set (`HashSet<String>`): 형용사 사전
     */
     pub fn copy_va_set(&mut self, dict_set: HashSet<String>) {
         self.va_set = dict_set;
     }
-    /**
-    복합명사 사전을 바이칼 NLP 서버에 갱신합니다.
+    /// 모든 사용자 사전(복합명사, 고유명사, 동사, 형용사)을 바이칼 NLP 서버에 갱신합니다.
+    ///
+    /// 이 함수는 np_set, cp_set, cp_caret_set, vv_set, va_set의 모든 사전을 서버에 업데이트합니다.
+    ///
+    /// # Errors
+    ///
+    /// grpc::Error - 원격 호출시 예외가 발생할 수 있습니다.
+    ///
+    /// # Returns
+    ///
+    /// 갱신이 성공하면 true를 반환합니다.
+    pub async fn update(&self) -> Result<bool> {
+        if self.apikey.is_empty() || self.host.is_empty() {
+            return Err(BareunError::InvalidArgument {
+                message: "Connection information not set. Use set_connection() first.".to_string(),
+            });
+        }
 
-    Raises:
-        e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
-
-    Returns:
-        bool: 갱신이 성공하면 참을 돌려줍니다.
-    */
-    pub fn update(&self) -> bool {
-        // TODO: Implement update method
-        unimplemented!()
+        let mut client =
+            CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;
+        client
+            .update(
+                &self.domain,
+                &self.np_set,
+                &self.cp_set,
+                &self.cp_caret_set,
+                &self.vv_set,
+                &self.va_set,
+            )
+            .await
     }
     /**
     사용자 사전의 내용을 가져옵니다.
@@ -222,16 +281,48 @@ impl CustomDict {
     Returns:
         CustomDictionary: 사용자 사전 데이터 전체를 담고 있는 protobuf 메시지
     */
-    pub fn get(&self) {
-        // TODO: Implement get method
-        unimplemented!()
+    pub async fn get(&self) -> Result<CustomDictionary> {
+        if self.apikey.is_empty() || self.host.is_empty() {
+            return Err(BareunError::InvalidArgument {
+                message: "Connection information not set. Use set_connection() first.".to_string(),
+            });
+        }
+
+        let mut client =
+            CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;
+        client.get(&self.domain).await
     }
     /**
     서버에 저정되어 있는 사용자 사전을 모두 가져옵니다.
     */
-    pub fn load(&mut self) {
-        // TODO: Implement load method
-        unimplemented!()
+    pub async fn load(&mut self) -> Result<()> {
+        if self.apikey.is_empty() || self.host.is_empty() {
+            return Err(BareunError::InvalidArgument {
+                message: "Connection information not set. Use set_connection() first.".to_string(),
+            });
+        }
+
+        let mut client =
+            CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;
+        let d = client.get(&self.domain).await?;
+
+        if let Some(np_set) = d.np_set {
+            self.np_set = pb_map_to_set(&np_set);
+        }
+        if let Some(cp_set) = d.cp_set {
+            self.cp_set = pb_map_to_set(&cp_set);
+        }
+        if let Some(cp_caret_set) = d.cp_caret_set {
+            self.cp_caret_set = pb_map_to_set(&cp_caret_set);
+        }
+        if let Some(vv_set) = d.vv_set {
+            self.vv_set = pb_map_to_set(&vv_set);
+        }
+        if let Some(va_set) = d.va_set {
+            self.va_set = pb_map_to_set(&va_set);
+        }
+
+        Ok(())
     }
     /**
     사용자 사전의 내용을 삭제합니다.
@@ -240,13 +331,23 @@ impl CustomDict {
         e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
 
     Returns:
-        Vec<String>: 삭제한 사용자 사전의 이름
+        `Vec<String>`: 삭제한 사용자 사전의 이름
     */
-    pub fn clear(&mut self) -> Vec<String> {
+    pub async fn clear(&mut self) -> Result<Vec<String>> {
+        if self.apikey.is_empty() || self.host.is_empty() {
+            return Err(BareunError::InvalidArgument {
+                message: "Connection information not set. Use set_connection() first.".to_string(),
+            });
+        }
+
         self.np_set.clear();
         self.cp_set.clear();
         self.cp_caret_set.clear();
-        // TODO: Implement clear method with gRPC
-        unimplemented!()
+        self.vv_set.clear();
+        self.va_set.clear();
+
+        let mut client =
+            CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;
+        client.remove(&[self.domain.clone()]).await
     }
 }

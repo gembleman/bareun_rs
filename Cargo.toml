@@ -1,20 +1,22 @@
 [package]
 name = "bareun_rs"
-version = "0.1.0"
-edition = "2021"
+version = "1.7.2"
+edition = "2024"
 license = "BSD-3-Clause"
 keywords = ["korean", "nlp", "tokenizer", "analyzer"]
-categories = ["natural-language-processing", "text-processing"]
-description = "Bareun is a Korean Morphological analyzer for Rust"
+categories = ["api-bindings", "text-processing"]
+description = "an unofficial Rust library for Bareun, a Korean morphological analyzer"
 build = "build.rs"
 repository = "https://github.com/gembleman/bareun_rs"
 
 [dependencies]
-tonic = "0.11"
-prost = "0.12"
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.117"
-tokio = { version = "1.38.0", features = ["full"] }
+tonic = { version = "0.14", features = ["transport", "tls-webpki-roots"] }
+tonic-prost = "0.14"
+prost = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros"] }
+thiserror = "2.0"
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-prost-build = "0.14"

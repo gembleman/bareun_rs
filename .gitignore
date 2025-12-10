@@ -1,2 +1,4 @@
 /target
 # /proto/google
+*.lock
+/.claude

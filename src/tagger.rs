@@ -3,62 +3,30 @@ use std::collections::HashMap;
 use crate::bareun::morpheme::{OutOfVocab, Tag};
 use crate::bareun::{AnalyzeSyntaxResponse, Morpheme, Sentence};
 use crate::custom_dict::CustomDict;
-// use crate::custom_dict::CustomDict;
-use crate::lang_service_client::{BareunLanguageServiceClient, MAX_MESSAGE_LENGTH};
-// use grpcio::{ChannelBuilder, Environment};
+use crate::error::{BareunError, Result};
+use crate::lang_service_client::BareunLanguageServiceClient;
 
-// use serde_json::json;
-use tonic::transport::Endpoint;
 pub struct Tagged {
-    /**
-    Tagged result.
-    It has various output manipulations.
-    */
-    phrase: String,
-    r: AnalyzeSyntaxResponse,
+    pub phrase: String,
+    pub r: AnalyzeSyntaxResponse,
 }
+
 impl Tagged {
-    /**
-    constructor, which is used internally.
-    :param phrase: requested sentences.
-    :param res:
-    */
     pub fn new(phrase: String, res: AnalyzeSyntaxResponse) -> Self {
         Tagged { phrase, r: res }
     }
-    /**
-    Protobuf message object containing all of NLP engine.
-    */
+
+    pub fn phrase(&self) -> &str {
+        &self.phrase
+    }
+
     pub fn msg(&self) -> &AnalyzeSyntaxResponse {
         &self.r
     }
-    /**
-    :return: get sentences from tagged results.
-    */
+
     pub fn sentences(&self) -> Vec<Sentence> {
         self.r.sentences.to_vec()
     }
-    // /**
-    // convert the message to a json object.
-    // :return: Json Obejct
-    // */
-    // pub fn as_json(&self) -> serde_json::Value {
-    //     serde_json::to_value(&self.r).unwrap()
-    // }
-    // /**
-    // a json string representing analyzed sentences.
-    // :return: json string
-    // */
-    // pub fn as_json_str(&self) -> String {
-    //     serde_json::to_string(&self.r).unwrap()
-    // }
-    // /**
-    // print the analysis result
-    // :return: None
-    // */
-    // pub fn print_as_json(&self) {
-    //     println!("{}", serde_json::to_string_pretty(&self.r).unwrap());
-    // }
 
     fn _pos(m: &Morpheme, join: bool, detail: bool) -> String {
         if join {
@@ -68,15 +36,14 @@ impl Tagged {
                 } else {
                     String::new()
                 };
-                let oov = if m.out_of_vocab != OutOfVocab::OutOfVocab as i32 {
-                    //OutOfVocab = 1
+                let oov = if m.out_of_vocab != OutOfVocab::InWordEmbedding as i32 {
                     format!("#{}", m.out_of_vocab().as_str_name())
                 } else {
                     String::new()
                 };
                 format!(
                     "{}/{}{}{}",
-                    m.text.clone().expect("text is empty").content,
+                    m.text.as_ref().expect("text is empty").content,
                     m.tag().as_str_name(),
                     p,
                     oov
@@ -84,7 +51,7 @@ impl Tagged {
             } else {
                 format!(
                     "{}/{}",
-                    m.text.clone().expect("text is empty").content,
+                    m.text.as_ref().expect("text is empty").content,
                     m.tag().as_str_name()
                 )
             }
@@ -92,7 +59,7 @@ impl Tagged {
             if detail {
                 format!(
                     "{}\t{}\t{}\t{}",
-                    m.text.clone().expect("text is empty").content,
+                    m.text.as_ref().expect("text is empty").content,
                     m.tag().as_str_name(),
                     m.out_of_vocab().as_str_name(),
                     m.probability
@@ -100,33 +67,29 @@ impl Tagged {
             } else {
                 format!(
                     "{}\t{}",
-                    m.text.clone().expect("text is empty").content,
+                    m.text.as_ref().expect("text is empty").content,
                     m.tag().as_str_name()
                 )
             }
         }
     }
-    /**
-    POS tagger to tuple.
-    :param flatten : If False, returns original morphs.
-    :param join    : If True, returns joined sets of morph and tag.
-    :param detail  : if True, returns everything of morph result
-    */
+
     pub fn pos(&self, flatten: bool, join: bool, detail: bool) -> Vec<Vec<String>> {
         if flatten {
-            vec![self
-                .r
-                .sentences
-                .iter()
-                .flat_map(|s| {
-                    s.tokens.iter().flat_map(|token| {
-                        token
-                            .morphemes
-                            .iter()
-                            .map(|m| Tagged::_pos(m, join, detail))
+            vec![
+                self.r
+                    .sentences
+                    .iter()
+                    .flat_map(|s| {
+                        s.tokens.iter().flat_map(|token| {
+                            token
+                                .morphemes
+                                .iter()
+                                .map(|m| Tagged::_pos(m, join, detail))
+                        })
                     })
-                })
-                .collect()]
+                    .collect(),
+            ]
         } else {
             self.r
                 .sentences
@@ -134,182 +97,149 @@ impl Tagged {
                 .map(|s| {
                     s.tokens
                         .iter()
-                        .map(|token| {
+                        .flat_map(|token| {
                             token
                                 .morphemes
                                 .iter()
                                 .map(|m| Tagged::_pos(m, join, detail))
-                                .collect()
                         })
                         .collect()
                 })
                 .collect()
         }
     }
-    /**Parse phrase to morphemes. */
+
+    /// 형태소를 추출합니다.
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 형태소의 벡터
     pub fn morphs(&self) -> Vec<String> {
         self.r
             .sentences
             .iter()
-            .flat_map(|s| s.tokens.clone())
-            .flat_map(|token| token.morphemes)
-            .map(|m| m.text.unwrap().content.to_string())
+            .flat_map(|s| &s.tokens)
+            .flat_map(|token| &token.morphemes)
+            .filter_map(|m| m.text.as_ref().map(|t| t.content.clone()))
             .collect()
     }
-    /**Noun extractor.*/
+
+    /// 명사를 추출합니다.
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 명사(고유명사, 일반명사, 대명사, 의존명사)의 벡터
     pub fn nouns(&self) -> Vec<String> {
         self.r
             .sentences
             .iter()
-            .flat_map(|s| s.tokens.clone())
-            .flat_map(|token| token.morphemes)
+            .flat_map(|s| &s.tokens)
+            .flat_map(|token| &token.morphemes)
             .filter(|m| {
-                m.tag == 25 //&Tag::NNP
-                    || m.tag == 24//&Tag::NNG
-                    || m.tag == 26//&Tag::NP
-                    || m.tag == 23 //&Tag::NNB
+                m.tag == Tag::Nnp as i32
+                    || m.tag == Tag::Nng as i32
+                    || m.tag == Tag::Np as i32
+                    || m.tag == Tag::Nnb as i32
             })
-            .map(|m| m.text.unwrap().content.to_string())
+            .filter_map(|m| m.text.as_ref().map(|t| t.content.clone()))
             .collect()
     }
-    /**Noun extractor.*/
+
+    /// 동사를 추출합니다.
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 동사의 벡터
     pub fn verbs(&self) -> Vec<String> {
         self.r
             .sentences
             .iter()
-            .flat_map(|s| s.tokens.clone())
-            .flat_map(|token| token.morphemes)
-            .filter(|m| m.tag == 41) //Tag::Vv
-            .map(|m| m.text.unwrap().content.to_string())
+            .flat_map(|s| &s.tokens)
+            .flat_map(|token| &token.morphemes)
+            .filter(|m| m.tag == Tag::Vv as i32)
+            .filter_map(|m| m.text.as_ref().map(|t| t.content.clone()))
             .collect()
     }
+
+    /// 분석 결과를 JSON 문자열로 변환
+    ///
+    /// Returns:
+    ///     JSON 문자열
+    pub fn as_json_str(&self) -> Result<String> {
+        Ok(serde_json::to_string_pretty(&self.r)?)
+    }
+
+    /// 분석 결과를 JSON 형식으로 출력
+    pub fn print_as_json(&self) -> Result<()> {
+        println!("{}", self.as_json_str()?);
+        Ok(())
+    }
 }
-/**Wrapper for bareun v1.7.x <https://github.com/bareun-nlp>_.
-       'bareun' is a morphological analyzer developed by Baikal AI, Inc. and Korea Press Foundation.
-        .. code-block:: rust
-:emphasize-lines: 1
->>> use bareunpy::Tagger;
->>> let tagger = Tagger::new("YOUR_API_KEY", "HOST", 5656, "custom");
->>> let morphs = tagger.morphs("안녕하세요, 반가워요.");
->>> println!("{:?}", morphs);
-["안녕", "하", "시", "어요", ",", "반갑", "어요", "."]
->>> let nouns = tagger.nouns("나비 허리에 새파란 초생달이 시리다.");
->>> println!("{:?}", nouns);
-["나비", "허리", "초생달"]
->>> let pos_result = tagger.pos("햇빛이 선명하게 나뭇잎을 핥고 있었다.", true, false, false);
->>> println!("{}", serde_json::to_string_pretty(&pos_result).unwrap());
-[
-  {
-    "text": "햇빛",
-    "tag": "NNG"
-  },
-  {
-    "text": "이",
-    "tag": "JKS"
-  },
-  {
-    "text": "선명",
-    "tag": "NNG"
-  },
-  {
-    "text": "하",
-    "tag": "XSA"
-  },
-  {
-    "text": "게",
-    "tag": "EC"
-  },
-  {
-    "text": "나뭇잎",
-    "tag": "NNG"
-  },
-  {
-    "text": "을",
-    "tag": "JKO"
-  },
-  {
-    "text": "핥",
-    "tag": "VV"
-  },
-  {
-    "text": "고",
-    "tag": "EC"
-  },
-  {
-    "text": "있",
-    "tag": "VX"
-  },
-  {
-    "text": "었",
-    "tag": "EP"
-  },
-  {
-    "text": "다",
-    "tag": "EF"
-  },
-  {
-    "text": ".",
-    "tag": "SF"
-  }
-]
-       :param host         : str. host name for bareun server
-       :param port         : int. port  for bareun server
-       :param domain       : custom domain name for analyzing request
-       */
+
 pub struct Tagger {
     client: BareunLanguageServiceClient,
-    domain: String,
-    custom_dicts: HashMap<String, CustomDict>,
+    custom_dicts: Vec<String>,
+    internal_custom_dicts: HashMap<String, CustomDict>,
+    apikey: String,
+    host: String,
+    port: i32,
 }
+
 impl Tagger {
-    pub async fn new(apikey: &str, host: &str, port: Option<i32>, domain: &str) -> Self {
-        let host = host.trim();
-        let domain = domain.trim();
-        let host = if host.is_empty() {
-            "nlp.bareun.ai"
-        } else {
-            host
-        };
-
-        let port = if port.is_none() { 5656 } else { port.unwrap() };
-
-        // let endpoint = format!("http://{}:{}", host, port);
-        // let channel = Endpoint::from_shared(endpoint)
-        //     .unwrap()
-        //     // .max_send_message_size(MAX_MESSAGE_LENGTH)
-        //     // .max_receive_message_size(MAX_MESSAGE_LENGTH)
-        //     .connect()
-        //     .await
-        //     .unwrap();
-
+    pub async fn new(
+        apikey: &str,
+        host: &str,
+        port: Option<u16>,
+        custom_dicts: Vec<String>,
+    ) -> Result<Self> {
         if apikey.is_empty() {
-            panic!("a apikey must be provided!");
+            return Err(BareunError::MissingApiKey);
         }
 
-        let client = BareunLanguageServiceClient::new(apikey, host, port).await;
+        let client = BareunLanguageServiceClient::new(apikey, host, port).await?;
 
-        Tagger {
+        // Store connection info for CustomDict creation
+        let host_str = if host.trim().is_empty() {
+            "api.bareun.ai"
+        } else {
+            host.trim()
+        };
+        let port_i32 = port.unwrap_or(if host_str == "api.bareun.ai" {
+            443
+        } else {
+            5656
+        }) as i32;
+
+        Ok(Tagger {
             client,
-            domain: domain.to_string(),
-            custom_dicts: std::collections::HashMap::default(),
-        }
-    }
-    /**
-    Set domain of custom dict.
-    :param domain: domain name of custom dict
-    */
-    pub fn set_domain(&mut self, domain: &str) {
-        self.domain = domain.to_string();
+            custom_dicts,
+            internal_custom_dicts: HashMap::new(),
+            apikey: apikey.to_string(),
+            host: host_str.to_string(),
+            port: port_i32,
+        })
     }
 
-    pub fn custom_dict(&mut self, domain: &str) -> &mut CustomDict {
-        if domain.is_empty() {
-            panic!("invalid domain name for custom dict");
+    pub fn set_custom_dicts(&mut self, custom_dicts: Vec<String>) {
+        self.custom_dicts = custom_dicts;
+    }
+
+    pub fn custom_dict(&mut self, name: &str) -> &mut CustomDict {
+        if name.is_empty() {
+            panic!("invalid name for custom dict");
         }
 
-        self.custom_dicts
-            .entry(domain.to_string())
-            .or_insert_with(|| CustomDict::new(domain))
+        let apikey = self.apikey.clone();
+        let host = self.host.clone();
+        let port = self.port;
+
+        self.internal_custom_dicts
+            .entry(name.to_string())
+            .or_insert_with(|| {
+                let mut cd = CustomDict::new(name);
+                cd.set_connection(&apikey, &host, port);
+                cd
+            })
     }
 
     pub async fn tag(
@@ -318,113 +248,137 @@ impl Tagger {
         auto_split: bool,
         auto_spacing: bool,
         auto_jointing: bool,
-    ) -> Tagged {
+    ) -> Result<Tagged> {
         if phrase.is_empty() {
             eprintln!("OOPS, no sentences.");
-            Tagged::new("".to_string(), AnalyzeSyntaxResponse::default())
-        } else {
-            let res = self
-                .client
-                .analyze_syntax(
-                    phrase,
-                    &self.domain,
-                    auto_split,
-                    auto_spacing,
-                    auto_jointing,
-                )
-                .await
-                .unwrap();
-            Tagged::new(phrase.to_string(), res)
+            return Ok(Tagged::new(
+                "".to_string(),
+                AnalyzeSyntaxResponse::default(),
+            ));
         }
+
+        let res = self
+            .client
+            .analyze_syntax(
+                phrase,
+                &self.custom_dicts,
+                auto_split,
+                auto_spacing,
+                auto_jointing,
+            )
+            .await?;
+
+        Ok(Tagged::new(phrase.to_string(), res))
     }
-    /**
-    tag string array.
-    :param phrase: array of string
-    :param auto_split(bool, optional): Whether to automatically perform sentence split
-    :param auto_spacing(bool, optional): Whether to automatically perform space insertion for typo correction
-    :param auto_jointing(bool, optional): Whether to automatically perform word joining for typo correction
-    :return: Tagged result instance
-    */
+
     pub async fn tags(
         &mut self,
         phrase: &[String],
         auto_split: bool,
         auto_spacing: bool,
         auto_jointing: bool,
-    ) -> Tagged {
+    ) -> Result<Tagged> {
         if phrase.is_empty() {
             eprintln!("OOPS, no sentences.");
-            Tagged::new("".to_string(), AnalyzeSyntaxResponse::default())
-        } else {
-            let p = phrase.join("\n");
-            let res = self
-                .client
-                .analyze_syntax(&p, &self.domain, auto_split, auto_spacing, auto_jointing)
-                .await
-                .unwrap();
-            Tagged::new(p, res)
+            return Ok(Tagged::new(
+                "".to_string(),
+                AnalyzeSyntaxResponse::default(),
+            ));
         }
+
+        let p = phrase.join("\n");
+        let res = self
+            .client
+            .analyze_syntax(
+                &p,
+                &self.custom_dicts,
+                auto_split,
+                auto_spacing,
+                auto_jointing,
+            )
+            .await?;
+
+        Ok(Tagged::new(p, res))
     }
-    /**
-    the array is not being split and the input value is being returned as-is.
-    :param phrase: array of string
-    :param auto_spacing(bool, optional): Whether to automatically perform space insertion for typo correction
-    :param auto_jointing(bool, optional): Whether to automatically perform word joining for typo correction
-    :return: Tagged result instance
-    */
+
     pub async fn taglist(
         &mut self,
         phrase: &[String],
         auto_spacing: bool,
         auto_jointing: bool,
-    ) -> Tagged {
+    ) -> Result<Tagged> {
         if phrase.is_empty() {
             eprintln!("OOPS, no sentences.");
-            Tagged::new("".to_string(), AnalyzeSyntaxResponse::default())
-        } else {
-            let res = self
-                .client
-                .analyze_syntax_list(phrase, &self.domain, auto_spacing, auto_jointing)
-                .await
-                .unwrap();
-
-            Tagged::new(
-                phrase.join("\n"),
-                AnalyzeSyntaxResponse {
-                    sentences: res.sentences.to_vec(),
-                    language: res.language,
-                },
-            )
+            return Ok(Tagged::new(
+                "".to_string(),
+                AnalyzeSyntaxResponse::default(),
+            ));
         }
+
+        let res = self
+            .client
+            .analyze_syntax_list(phrase, &self.custom_dicts, auto_spacing, auto_jointing)
+            .await?;
+
+        Ok(Tagged::new(
+            phrase.join("\n"),
+            AnalyzeSyntaxResponse {
+                sentences: res.sentences.to_vec(),
+                language: res.language,
+                tokens_count: res.tokens_count,
+            },
+        ))
     }
-    /**
-    POS tagger.
-    :param phrase  : string to analyse
-    :param flatten : If False, returns original morphs.
-    :param join    : If True, returns joined sets of morph and tag.
-    :param detail  : if True, returns every things of morph result
-    */
+
     pub async fn pos(
         &mut self,
         phrase: &str,
         flatten: bool,
         join: bool,
         detail: bool,
-    ) -> Vec<Vec<String>> {
-        self.tag(phrase, false, true, false)
-            .await
-            .pos(flatten, join, detail)
+    ) -> Result<Vec<Vec<String>>> {
+        Ok(self
+            .tag(phrase, false, true, false)
+            .await?
+            .pos(flatten, join, detail))
     }
-    /**Parse phrase to morphemes. */
-    pub async fn morphs(&mut self, phrase: &str) -> Vec<String> {
-        self.tag(phrase, false, true, false).await.morphs()
+
+    /// 문장을 분석하여 형태소를 추출합니다.
+    ///
+    /// # Arguments
+    ///
+    /// * `phrase` - 분석할 문장
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 형태소의 벡터
+    pub async fn morphs(&mut self, phrase: &str) -> Result<Vec<String>> {
+        Ok(self.tag(phrase, false, true, false).await?.morphs())
     }
-    /**Noun extractor.*/
-    pub async fn nouns(&mut self, phrase: &str) -> Vec<String> {
-        self.tag(phrase, false, true, false).await.nouns()
+
+    /// 문장을 분석하여 명사를 추출합니다.
+    ///
+    /// # Arguments
+    ///
+    /// * `phrase` - 분석할 문장
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 명사의 벡터
+    pub async fn nouns(&mut self, phrase: &str) -> Result<Vec<String>> {
+        Ok(self.tag(phrase, false, true, false).await?.nouns())
     }
-    /**Verbs extractor.*/
-    pub async fn verbs(&mut self, phrase: &str) -> Vec<String> {
-        self.tag(phrase, false, true, false).await.verbs()
+
+    /// 문장을 분석하여 동사를 추출합니다.
+    ///
+    /// # Arguments
+    ///
+    /// * `phrase` - 분석할 문장
+    ///
+    /// # Returns
+    ///
+    /// 분석된 모든 동사의 벡터
+    pub async fn verbs(&mut self, phrase: &str) -> Result<Vec<String>> {
+        Ok(self.tag(phrase, false, true, false).await?.verbs())
     }
 }

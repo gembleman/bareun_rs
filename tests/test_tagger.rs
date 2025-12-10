@@ -4,133 +4,132 @@ mod tests {
 
     #[tokio::test]
     async fn test_tagger_pos() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let result = tagger.pos(sample1, false, false, false).await;
-        println!("{:?}", result);
-        // assert_eq!(
-        //     result,
-        //     vec![
-        //         ("오늘".to_string(), "NNG".to_string()),
-        //         ("은".to_string(), "JX".to_string()),
-        //         ("정말".to_string(), "MAG".to_string()),
-        //         ("춥".to_string(), "VA".to_string()),
-        //         ("ㄴ".to_string(), "ETM".to_string()),
-        //         ("날".to_string(), "NNG".to_string()),
-        //         ("이".to_string(), "VCP".to_string()),
-        //         ("네".to_string(), "EF".to_string()),
-        //         ("요".to_string(), "JX".to_string()),
-        //         (".".to_string(), "SF".to_string())
-        //     ]
-        // );
+        let result = tagger.pos(sample1, true, false, false).await.unwrap();
+        // flatten=true이므로 단일 벡터로 반환됨
+        assert_eq!(result.len(), 1);
+        let flat_result: Vec<&str> = result[0]
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        // 탭으로 구분된 형태소\t품사 형식을 파싱
+        let parsed: Vec<(&str, &str)> = flat_result
+            .iter()
+            .map(|s| {
+                let parts: Vec<&str> = s.split('\t').collect();
+                (parts[0], parts[1])
+            })
+            .collect();
+
+        assert_eq!(
+            parsed,
+            vec![
+                ("오늘", "NNG"),
+                ("은", "JX"),
+                ("정말", "MAG"),
+                ("춥", "VA"),
+                ("ㄴ", "ETM"),
+                ("날", "NNG"),
+                ("이", "VCP"),
+                ("네", "EF"),
+                ("요", "JX"),
+                (".", "SF")
+            ]
+        );
     }
 
     #[tokio::test]
     async fn test_tagger_pos_join() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let result = tagger.pos(sample1, false, true, false).await;
-        println!("{:?}", result);
-        // assert_eq!(
-        //     result,
-        //     vec![
-        //         "오늘/NNG",
-        //         "은/JX",
-        //         "정말/MAG",
-        //         "춥/VA",
-        //         "ㄴ/ETM",
-        //         "날/NNG",
-        //         "이/VCP",
-        //         "네/EF",
-        //         "요/JX",
-        //         "./SF"
-        //     ]
-        // );
+        let result = tagger.pos(sample1, true, true, false).await.unwrap();
+        // flatten=true이므로 단일 벡터로 반환됨
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0],
+            vec![
+                "오늘/NNG",
+                "은/JX",
+                "정말/MAG",
+                "춥/VA",
+                "ㄴ/ETM",
+                "날/NNG",
+                "이/VCP",
+                "네/EF",
+                "요/JX",
+                "./SF"
+            ]
+        );
     }
 
     #[tokio::test]
     async fn test_tagger_pos_detail() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let result = tagger.pos(sample1, false, false, true).await;
-        println!("{:?}", result);
-        // let temp2: Vec<(String, String, String)> = result
-        //     .into_iter()
-        //     .map(|(t0, t1, t2, _)| (t0, t1, t2))
-        //     .collect();
-        // assert_eq!(
-        //     temp2,
-        //     vec![
-        //         (
-        //             "오늘".to_string(),
-        //             "NNG".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "은".to_string(),
-        //             "JX".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "정말".to_string(),
-        //             "MAG".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "춥".to_string(),
-        //             "VA".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "ㄴ".to_string(),
-        //             "ETM".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "날".to_string(),
-        //             "NNG".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "이".to_string(),
-        //             "VCP".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "네".to_string(),
-        //             "EF".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             "요".to_string(),
-        //             "JX".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         ),
-        //         (
-        //             ".".to_string(),
-        //             "SF".to_string(),
-        //             "IN_WORD_EMBEDDING".to_string()
-        //         )
-        //     ]
-        // );
+        let result = tagger.pos(sample1, true, false, true).await.unwrap();
+        // flatten=true이므로 단일 벡터로 반환됨
+        assert_eq!(result.len(), 1);
+        let flat_result: Vec<&str> = result[0]
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        // 탭으로 구분된 형태소\t품사\tOOV\t확률 형식을 파싱
+        let temp2: Vec<(&str, &str, &str)> = flat_result
+            .iter()
+            .map(|s| {
+                let parts: Vec<&str> = s.split('\t').collect();
+                (parts[0], parts[1], parts[2])
+            })
+            .collect();
+
+        assert_eq!(
+            temp2,
+            vec![
+                ("오늘", "NNG", "IN_WORD_EMBEDDING"),
+                ("은", "JX", "IN_WORD_EMBEDDING"),
+                ("정말", "MAG", "IN_WORD_EMBEDDING"),
+                ("춥", "VA", "IN_WORD_EMBEDDING"),
+                ("ㄴ", "ETM", "IN_WORD_EMBEDDING"),
+                ("날", "NNG", "IN_WORD_EMBEDDING"),
+                ("이", "VCP", "IN_WORD_EMBEDDING"),
+                ("네", "EF", "IN_WORD_EMBEDDING"),
+                ("요", "JX", "IN_WORD_EMBEDDING"),
+                (".", "SF", "IN_WORD_EMBEDDING")
+            ]
+        );
     }
 
     #[tokio::test]
     async fn test_tagger_morphs() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let result = tagger.morphs(sample1).await;
+        let result = tagger.morphs(sample1).await.unwrap();
         assert_eq!(
             result,
-            vec!["오늘", "은", "정말", "춥", "ㄴ", "날", "이", "네", "요", "."]
+            vec![
+                "오늘", "은", "정말", "춥", "ㄴ", "날", "이", "네", "요", "."
+            ]
         );
     }
 
     #[tokio::test]
     async fn test_tagger_nouns() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let result = tagger.nouns(sample1).await;
+        let result = tagger.nouns(sample1).await.unwrap();
         assert_eq!(result, vec!["오늘", "날"]);
     }
 
@@ -185,9 +184,16 @@ mod tests {
     // }
     #[tokio::test]
     async fn test_tagger_tag_as_msg() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let sample1 = "오늘은 정말 추운 날이네요.";
-        let m = tagger.tag(sample1, false, true, false).await.msg().clone();
+        let m = tagger
+            .tag(sample1, false, true, false)
+            .await
+            .unwrap()
+            .msg()
+            .clone();
         assert_eq!(
             m.sentences[0].tokens[3].tagged,
             "날/NNG+이/VCP+네/EF+요/JX+./SF"
@@ -196,14 +202,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_tagger_create_custom_dict() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let cd = tagger.custom_dict("my");
         assert!(cd.domain == "my");
     }
 
     #[tokio::test]
     async fn test_tagger_update_custom_dict() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let cd = tagger.custom_dict("my");
         cd.copy_np_set(
             vec![
@@ -224,14 +234,17 @@ mod tests {
             .into_iter()
             .collect(),
         );
-        let result = cd.update();
+        let result = cd.update().await.unwrap();
         assert!(result);
     }
 
     #[tokio::test]
     async fn test_tagger_get_custom_dict_np_set() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let dic = tagger.custom_dict("my");
+        dic.load().await.unwrap();
         println!("{:?}", dic.np_set);
         assert_eq!(dic.np_set.len(), 4);
         assert!(dic.np_set.contains("유리왕"));
@@ -242,8 +255,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tagger_get_custom_dict_cp_set() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let dic = tagger.custom_dict("my");
+        dic.load().await.unwrap();
         println!(
             "{:?}, {:?}, {:?}, {:?},",
             dic.cp_set, dic.cp_caret_set, dic.vv_set, dic.va_set
@@ -254,11 +270,49 @@ mod tests {
 
     #[tokio::test]
     async fn test_tagger_get_custom_dict_cp_caret_set() {
-        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), "").await;
+        let mut tagger = Tagger::new("appppppiiii", "127.0.0.1", Some(5656), vec![])
+            .await
+            .unwrap();
         let dic = tagger.custom_dict("my");
+        dic.load().await.unwrap();
 
         assert_eq!(dic.cp_caret_set.len(), 2);
         assert!(dic.cp_caret_set.contains("인공지능^데이터^학습"));
         assert!(dic.cp_caret_set.contains("자연어^처리^엔진"));
+    }
+
+    #[tokio::test]
+    #[ignore] // 로컬 테스트 서버는 API 키 검증을 하지 않으므로 실제 서버 테스트 시에만 실행
+    async fn test_exception_apikey() {
+        // 잘못된 API 키로 연결 시도
+        let mut tagger = Tagger::new(
+            "invalid-api-key",
+            "api.bareun.ai",
+            Some(443),
+            vec![],
+        )
+        .await
+        .unwrap(); // 연결 자체는 성공할 수 있음
+
+        let sample1 = "오늘은 정말 추운 날이네요.";
+        // API 키가 잘못되면 실제 요청 시 에러 발생
+        let result = tagger.pos(sample1, true, false, false).await;
+
+        // 잘못된 API 키로 인한 에러 발생 확인
+        assert!(result.is_err(), "Expected error for invalid API key during request");
+    }
+
+    #[tokio::test]
+    async fn test_exception_host() {
+        let tagger_result = Tagger::new(
+            "appppppiiii",
+            "127.0.0.1:5656",
+            Some(5656),
+            vec![],
+        )
+        .await;
+
+        // 잘못된 호스트 형식으로 인한 연결 에러 확인
+        assert!(tagger_result.is_err(), "Expected error for invalid host format");
     }
 }

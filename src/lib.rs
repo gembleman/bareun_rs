@@ -1,8 +1,9 @@
-//! bareun_rs::bareun
-//! =====
+// ! bareun_rs::bareun
+//! =====  
 //! Provides
 //!   1. a Korean Part-Of-Speech Tagger as bareun client
 //!   2. Multiple custom dictionaries which is kept in the your bareun server.
+//!   3. Korean spelling corrector
 //!
 //!
 //! How to use the documentation
@@ -12,52 +13,54 @@
 //! - see `docs/intro.html` at installable tarball.
 //! - or `http://localhost:5757/intro.html` after running docker.
 //!
-//! The docstring examples assume that `bareun_rs::bareun` has been imported as `brn`::
+//! The docstring examples assume that `bareun_rs::bareun` has been imported as `brn`.
 //!   >>> use bareun_rs::bareun as brn;
-//!
-//! Use the built-in ``help`` function to view a class's docstring::
-//!   >>> help(brn::Tagger)
-//!   ...
 //!
 //! Classes
 //! -------
-//! Tagger
-//!     the bareun POS tagger for Korean
-//!     `use bareun_rs::bareun::Tagger;`
-//! Tagged
-//!     Wrapper for tagged output
-//!     `use bareun_rs::bareun::Tagged;`
-//! CustomDict
-//!     Custom dictionary for Korean.
-//!     `use bareun_rs::bareun::CustomDict;`
+//! Tagger  
+//!     the bareun POS tagger for Korean  
+//!     `use bareun_rs::bareun::Tagger;`  
+//! Tagged  
+//!     Wrapper for tagged output  
+//!     `use bareun_rs::bareun::Tagged;`  
+//! Tokenizer  
+//!     the bareun tokenizer for Korean  
+//!     `use bareun_rs::bareun::Tokenizer;`  
+//! Tokenized  
+//!     Wrapper for tokenized output  
+//!     `use bareun_rs::bareun::Tokenized;`  
+//! Corrector  
+//!     Korean spelling corrector  
+//!     `use bareun_rs::bareun::Corrector;`  
+//! CustomDict  
+//!     Custom dictionary for Korean.  
+//!     `use bareun_rs::bareun::CustomDict;`  
 //!
-//! Version
-//! -------
-//! ```
-//! use bareun_rs as brn;
-//! println!("{}", brn::VERSION);
-//! println!("{}", brn::BAREUN_VERSION);
-//! ```
 //!
 //! Get bareun
 //! ----------------------------
-//! - Use docker, https://hub.docker.com/r/bareunai/bareun
-//! - Or visit https://bareun.ai/
+//! - Use docker, <https://hub.docker.com/r/bareunai/bareun>
+//! - Or visit <https://bareun.ai/>
 
-pub use crate::custom_dict::CustomDict;
-// pub use crate::custom_dict_client::CustomDictionaryServiceClient; // not yet
-pub use crate::lang_service_client::BareunLanguageServiceClient;
-pub use crate::tagger::{Tagged, Tagger};
-pub use crate::tokenizer::{Tokenized, Tokenizer};
-
+mod constants;
+mod corrector;
 mod custom_dict;
-// mod custom_dict_client; // not yet
+mod custom_dict_client;
+mod error;
 mod lang_service_client;
+mod revision_service_client;
 mod tagger;
 mod tokenizer;
 
-pub const VERSION: &str = "1.6.3";
-pub const BAREUN_VERSION: &str = "1.8.0";
+pub use crate::corrector::*;
+pub use crate::custom_dict::*;
+pub use crate::custom_dict_client::*;
+pub use crate::error::*;
+pub use crate::lang_service_client::*;
+pub use crate::revision_service_client::*;
+pub use crate::tagger::*;
+pub use crate::tokenizer::*;
 
 pub mod bareun {
     tonic::include_proto!("bareun");

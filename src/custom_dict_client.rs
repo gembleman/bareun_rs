@@ -1,19 +1,14 @@
 use std::collections::{HashMap, HashSet};
-use tonic::transport::{Channel, Error};
+use tonic::transport::Channel;
 
 use crate::bareun::{
-    // custom_dictionary_service_client::CustomDictionaryServiceClient as TonicClient,
-    CustomDictionary,
-    CustomDictionaryMeta,
-    DictSet,
-    DictType,
-    Empty,
-    GetCustomDictionaryRequest,
-    RemoveCustomDictionariesRequest,
+    CheckConflictRequest, CheckConflictResponse, CustomDictionary, CustomDictionaryMeta, DictSet,
+    DictType, GetCustomDictionaryRequest, RemoveCustomDictionariesRequest,
     UpdateCustomDictionaryRequest,
+    custom_dictionary_service_client::CustomDictionaryServiceClient as TonicClient,
 };
-
-pub const MAX_MESSAGE_LENGTH: i32 = 100 * 1024 * 1024;
+use crate::constants::MAX_MESSAGE_LENGTH;
+use crate::error::Result;
 
 /**
 주어진 파라미터를 사용하여 사용자 사전의 한 표현 형태인 DictSet protobuf 메시지를 만듭니다.
@@ -42,9 +37,9 @@ pub fn build_dict_set(domain: &str, name: &str, dict_set: &HashSet<String>) -> D
 The custom dictionary client which can create, update, list, delete your own one.
 */
 pub struct CustomDictionaryServiceClient {
-    channel: Channel,
-    apikey: String,
-    metadata: (String, String),
+    pub channel: Channel,
+    pub apikey: String,
+    pub metadata: (String, String),
     // stub: CustomDictionaryServiceStub,
 }
 
@@ -53,7 +48,7 @@ impl CustomDictionaryServiceClient {
     Args:
         remote (grpc.Channel): 미리 만들어 놓은 channel 객체
     */
-    pub async fn new(apikey: &str, host: &str, port: i32) -> Result<Self, Error> {
+    pub async fn new(apikey: &str, host: &str, port: i32) -> Result<Self> {
         let channel = Channel::from_shared(format!("http://{}:{}", host, port))
             .unwrap()
             .connect()
@@ -61,7 +56,7 @@ impl CustomDictionaryServiceClient {
         Ok(Self {
             channel,
             apikey: apikey.to_string(),
-            metadata: ("api_key".to_string(), "".to_string()),
+            metadata: ("api_key".to_string(), apikey.to_string()),
         })
     }
 
@@ -73,12 +68,14 @@ impl CustomDictionaryServiceClient {
     Returns:
         Vec<CustomDictionaryMeta>: 사전에 대한 정보들을 목록을 배열합니다.
     */
-    pub async fn get_list(&mut self) -> Result<Vec<CustomDictionaryMeta>, Error> {
-        // let mut client = TonicClient::new(self.channel.clone());
+    pub async fn get_list(&mut self) -> Result<Vec<CustomDictionaryMeta>> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
 
-        let req = tonic::Request::new(Empty {});
+        let req = tonic::Request::new(());
 
-        // let res = client.get_custom_dictionary_list(req).await?;
+        let res = client.get_custom_dictionary_list(req).await?;
         Ok(res.into_inner().domain_dicts)
     }
 
@@ -94,10 +91,17 @@ impl CustomDictionaryServiceClient {
     Returns:
         CustomDictionary: 사용자 사전 데이터 전체를 담고 있는 protobuf 메시지
     */
-    pub async fn get(&mut self, domain: &str) -> Result<CustomDictionary, Error> {
-        let mut client = TonicClient::new(self.channel.clone());
-        let mut req = GetCustomDictionaryRequest::default();
-        req.domain_name = domain.to_string();
+    pub async fn get(&mut self, domain: &str) -> Result<CustomDictionary> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
+        let mut req_msg = GetCustomDictionaryRequest::default();
+        req_msg.domain_name = domain.to_string();
+
+        let mut req = tonic::Request::new(req_msg);
+        req.metadata_mut()
+            .insert("api-key", self.apikey.parse().unwrap());
+
         let res = client.get_custom_dictionary(req).await?;
         Ok(res.into_inner().dict.unwrap())
     }
@@ -106,12 +110,11 @@ impl CustomDictionaryServiceClient {
 
     Args:
         domain (str): 사용자 사전의 이름
-        np (HashSet<String>): 고유명사 단어 집합
-        cp (HashSet<String>): 복합명사 단어 집합
-        cp_caret (HashSet<String>): 복합명사 분리 단어 집합
-        vv (HashSet<String>): 동사 단어 집합
-        va (HashSet<String>): 형용사 단어 집합
-
+        np (`HashSet<String>`): 고유명사 단어 집합
+        cp (`HashSet<String>`): 복합명사 단어 집합
+        cp_caret (`HashSet<String>`): 복합명사 분리 단어 집합
+        vv (`HashSet<String>`): 동사 단어 집합
+        va (`HashSet<String>`): 형용사 단어 집합
     Raises:
         e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
 
@@ -126,10 +129,12 @@ impl CustomDictionaryServiceClient {
         cp_caret: &HashSet<String>,
         vv: &HashSet<String>,
         va: &HashSet<String>,
-    ) -> Result<bool, Error> {
-        let mut client = TonicClient::new(self.channel.clone());
-        let mut req = UpdateCustomDictionaryRequest::default();
-        req.domain_name = domain.to_string();
+    ) -> Result<bool> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
+        let mut req_msg = UpdateCustomDictionaryRequest::default();
+        req_msg.domain_name = domain.to_string();
 
         let mut dict = CustomDictionary::default();
         dict.domain_name = domain.to_string();
@@ -139,7 +144,11 @@ impl CustomDictionaryServiceClient {
         dict.va_set = Some(build_dict_set(domain, "va-set", va));
         dict.cp_caret_set = Some(build_dict_set(domain, "cp-caret-set", cp_caret));
 
-        req.dict = Some(dict);
+        req_msg.dict = Some(dict);
+
+        let mut req = tonic::Request::new(req_msg);
+        req.metadata_mut()
+            .insert("api-key", self.apikey.parse().unwrap());
 
         let res = client.update_custom_dictionary(req).await?;
         Ok(res.into_inner().updated_domain_name == domain)
@@ -152,10 +161,12 @@ impl CustomDictionaryServiceClient {
         e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
 
     Returns:
-        Vec<String>: 삭제한 사전의 이름
+        `Vec<String>`: 삭제한 사전의 이름
     */
-    pub async fn remove_all(&mut self) -> Result<Vec<String>, Error> {
-        let mut client = TonicClient::new(self.channel.clone());
+    pub async fn remove_all(&mut self) -> Result<Vec<String>> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
         let mut req = RemoveCustomDictionariesRequest::default();
         req.all = true;
 
@@ -171,16 +182,18 @@ impl CustomDictionaryServiceClient {
     /** 지정한 도메인의 사용지 사전을 삭제한 다음 삭제한 사전의 목록을 반환합니다.
 
     Args:
-        domains (Vec<String>): 삭제할 커스텀 사전의 이름들
+        domains (`Vec<String>`): 삭제할 커스텀 사전의 이름들
 
     Raises:
         e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
 
     Returns:
-        Vec<String>: 정상 삭제된 도메인의 이름 목록을 돌려줍니다.
+        `Vec<String>`: 정상 삭제된 도메인의 이름 목록을 돌려줍니다.
     */
-    pub async fn remove(&mut self, domains: &[String]) -> Result<Vec<String>, Error> {
-        let mut client = TonicClient::new(self.channel.clone());
+    pub async fn remove(&mut self, domains: &[String]) -> Result<Vec<String>> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
         let mut req = RemoveCustomDictionariesRequest::default();
         req.domain_names = domains.to_vec();
         req.all = false;
@@ -192,5 +205,30 @@ impl CustomDictionaryServiceClient {
             .keys()
             .cloned()
             .collect())
+    }
+
+    /** 사용자 사전들 사이의 충돌을 점검합니다.
+
+    Args:
+        domain_names (`Vec<String>`): 점검할 사용자 사전들의 이름
+
+    Raises:
+        e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
+
+    Returns:
+        CheckConflictResponse: 충돌 점검 결과
+    */
+    pub async fn check_conflict(
+        &mut self,
+        domain_names: &[String],
+    ) -> Result<CheckConflictResponse> {
+        let mut client = TonicClient::new(self.channel.clone())
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
+        let mut req = CheckConflictRequest::default();
+        req.domain_names = domain_names.to_vec();
+
+        let res = client.check_conflict(req).await?;
+        Ok(res.into_inner())
     }
 }

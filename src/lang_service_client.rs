@@ -1,162 +1,201 @@
-use std::collections::HashMap;
-
-use tonic::transport::{channel, Channel, Error};
-use tonic::Status;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
+use tonic::{Request, Status};
 
 use crate::bareun::language_service_client::LanguageServiceClient;
 use crate::bareun::{
     AnalyzeSyntaxListRequest, AnalyzeSyntaxListResponse, AnalyzeSyntaxRequest,
     AnalyzeSyntaxResponse, Document, EncodingType, TokenizeRequest, TokenizeResponse,
 };
-// use grpcio::{ChannelBuilder, Environment};
-pub const MAX_MESSAGE_LENGTH: usize = 100 * 1024 * 1024;
-pub struct BareunLanguageServiceClient {
-    /**
-    형태소 분석을 처리하는 클라이언트
-    */
-    client: LanguageServiceClient<Channel>,
-    apikey: String,
-    metadata: HashMap<String, String>,
-}
-impl BareunLanguageServiceClient {
-    /**
-    클라이언트 생성자
-    Args:
-        channel (grpcio::Channel): 원격 채널 정보
-    */
-    pub async fn new(apikey: &str, host: &str, port: i32) -> Self {
-        // let env = Environment::new(1);
-        // let channel = ChannelBuilder::new(env).connect(&format!("{}:{}", host, port));
-        let endpoint = channel::Endpoint::new(format!("grpc://{}:{}", host, port)).unwrap();
-        let channel = endpoint.connect().await.unwrap();
-        let client = LanguageServiceClient::new(channel);
-        println!(
-            "Connected to server at {}:{}\napikey:{}",
-            host, port, apikey
-        );
+use crate::constants::{CA_BUNDLE, MAX_MESSAGE_LENGTH};
+use crate::error::{BareunError, Result};
 
-        BareunLanguageServiceClient {
+fn resolve_port(host: &str, port: Option<u16>) -> u16 {
+    if let Some(p) = port {
+        p
+    } else if host.to_lowercase().starts_with("api.bareun.ai") {
+        443
+    } else {
+        5656
+    }
+}
+
+pub struct BareunLanguageServiceClient {
+    pub client: LanguageServiceClient<Channel>,
+    pub apikey: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl BareunLanguageServiceClient {
+    /// 클라이언트 생성자
+    ///
+    /// Args:
+    ///     apikey: Bareun API 키
+    ///     host: Bareun 서버 호스트 주소
+    ///     port: Bareun 서버 포트 번호
+    pub async fn new(apikey: &str, host: &str, port: Option<u16>) -> Result<Self> {
+        let host = host.trim();
+        let host = if host.is_empty() {
+            "api.bareun.ai"
+        } else {
+            host
+        };
+
+        let port = resolve_port(host, port);
+        let channel = Self::create_channel(host, port).await?;
+        let client = LanguageServiceClient::new(channel)
+            .max_decoding_message_size(MAX_MESSAGE_LENGTH)
+            .max_encoding_message_size(MAX_MESSAGE_LENGTH);
+
+        Ok(BareunLanguageServiceClient {
             client,
             apikey: apikey.to_string(),
-            metadata: HashMap::new(),
+            host: host.to_string(),
+            port,
+        })
+    }
+
+    async fn create_channel(host: &str, port: u16) -> Result<Channel> {
+        let uri = if host.to_lowercase().starts_with("api.bareun.ai") {
+            format!("https://{}:{}", host, port)
+        } else {
+            format!("http://{}:{}", host, port)
+        };
+
+        let endpoint = Endpoint::from_shared(uri)?;
+
+        let channel = if host.to_lowercase().starts_with("api.bareun.ai") {
+            let cert = Certificate::from_pem(CA_BUNDLE);
+            let tls = ClientTlsConfig::new().ca_certificate(cert);
+            endpoint.tls_config(tls)?.connect().await?
+        } else {
+            endpoint.connect().await?
+        };
+
+        Ok(channel)
+    }
+
+    fn handle_grpc_error(&self, e: Status) -> BareunError {
+        let code = e.code();
+        let details = e.message();
+        let server_message = if details.is_empty() {
+            "서버에서 추가 메시지를 제공하지 않았습니다.".to_string()
+        } else {
+            details.to_string()
+        };
+
+        match code {
+            tonic::Code::PermissionDenied => BareunError::PermissionDenied {
+                apikey: self.apikey.clone(),
+                message: server_message,
+            },
+            tonic::Code::Unavailable => BareunError::ServerUnavailable {
+                host: self.host.clone(),
+                port: self.port,
+                message: server_message,
+            },
+            tonic::Code::InvalidArgument => BareunError::InvalidArgument {
+                message: server_message,
+            },
+            _ => BareunError::GrpcError(server_message),
         }
     }
-    /**
-    형태소 분석을 수행합니다.
 
-    Args:
-        content (str): 형태소 분석할 원문, 여러 문장일 경우에 개행문자로 줄바꿈을 하면 됩니다.
-        domain (str, optional): 사용사 사전의 이름. 기본값은 "".
-        auto_split (bool, optional): 문장 자동 분리 여부, 기본값은 사용하지 않음.
-        auto_spacing (bool, optional): 띄어쓰기 보정 기능, 기본값은 사용하도록 함.
-        auto_jointing (bool, optional): 붙여쓰기 보정 기능, 기본값은 사용하지 않음.
-
-    Raises:
-        e: Error, 원격 호출시 예외가 발생할 수 있습니다.
-
-    Returns:
-        AnalyzeSyntaxResponse: 형태소 분석 결과
-    */
+    /// 형태소 분석을 수행합니다.
+    ///
+    /// Args:
+    ///     content: 형태소 분석할 원문
+    ///     custom_dicts: 사용할 커스텀 사전 이름 목록
+    ///     auto_split: 문장 자동 분리 여부
+    ///     auto_spacing: 띄어쓰기 보정 기능
+    ///     auto_jointing: 붙여쓰기 보정 기능
     pub async fn analyze_syntax(
         &mut self,
         content: &str,
-        domain: &str,
+        custom_dicts: &[String],
         auto_split: bool,
         auto_spacing: bool,
         auto_jointing: bool,
-    ) -> Result<AnalyzeSyntaxResponse, Status> {
-        let mut req = AnalyzeSyntaxRequest::default();
-        let mut document = Document::default();
-        document.content = content.to_string();
-        document.language = "ko_KR".to_string();
-        req.document = Some(document);
-        req.encoding_type = EncodingType::Utf32.into();
-        req.auto_split_sentence = auto_split;
-        req.auto_spacing = auto_spacing;
-        req.auto_jointing = auto_jointing;
-        if !domain.is_empty() {
-            req.custom_domain = domain.to_string();
-        }
+    ) -> Result<AnalyzeSyntaxResponse> {
+        let req = AnalyzeSyntaxRequest {
+            document: Some(Document {
+                content: content.to_string(),
+                language: "ko_KR".to_string(),
+            }),
+            encoding_type: EncodingType::Utf32.into(),
+            auto_split_sentence: auto_split,
+            auto_spacing,
+            auto_jointing,
+            #[allow(deprecated)]
+            custom_domain: String::new(), // deprecated field
+            custom_dict_names: custom_dicts.to_vec(),
+        };
 
-        let mut req = tonic::Request::new(req);
-        req.metadata_mut()
+        let mut request = Request::new(req);
+        request
+            .metadata_mut()
             .insert("api-key", self.apikey.parse().unwrap());
 
-        match self.client.analyze_syntax(req).await {
+        match self.client.analyze_syntax(request).await {
             Ok(response) => Ok(response.into_inner()),
-            Err(error) => Err(error),
+            Err(e) => Err(self.handle_grpc_error(e)),
         }
     }
-    /**
-    형태소 분석을 수행하되, 입력된 문장 단위가 일치하도록 반환됩니다.
-    문장 분할 기능을 사용하지 않습니다.
 
-    Args:
-        content (Vec<String>): 형태소 분석할 원문의 리스트
-        domain (str, optional): 사용사 사전의 이름. 기본값은 "".
-        auto_spacing (bool, optional): 띄어쓰기 보정 기능, 기본값은 사용하도록 함.
-        auto_jointing (bool, optional): 붙여쓰기 보정 기능, 기본값은 사용하지 않음.
-
-    Raises:
-        e: Error, 원격 호출시 예외가 발생할 수 있습니다.
-
-    Returns:
-        AnalyzeSyntaxListResponse: 형태소 분석 결과
-    */
+    /// 형태소 분석을 수행하되, 입력된 문장 단위가 일치하도록 반환됩니다.
     pub async fn analyze_syntax_list(
         &mut self,
         content: &[String],
-        domain: &str,
+        custom_dicts: &[String],
         auto_spacing: bool,
         auto_jointing: bool,
-    ) -> Result<AnalyzeSyntaxListResponse, Status> {
-        let mut req = AnalyzeSyntaxListRequest::default();
-        req.sentences = content.to_vec().into();
-        req.language = "ko_KR".to_string();
-        req.encoding_type = EncodingType::Utf32.into();
-        req.auto_spacing = auto_spacing;
-        req.auto_jointing = auto_jointing;
-        if !domain.is_empty() {
-            req.custom_domain = domain.to_string();
-        }
-        match self
-            .client
-            .analyze_syntax_list(tonic::Request::new(req))
-            .await
-        {
+    ) -> Result<AnalyzeSyntaxListResponse> {
+        let req = AnalyzeSyntaxListRequest {
+            sentences: content.to_vec(),
+            language: "ko_KR".to_string(),
+            encoding_type: EncodingType::Utf32.into(),
+            auto_spacing,
+            auto_jointing,
+            #[allow(deprecated)]
+            custom_domain: String::new(), // deprecated field
+            custom_dict_names: custom_dicts.to_vec(),
+        };
+
+        let mut request = Request::new(req);
+        request
+            .metadata_mut()
+            .insert("api-key", self.apikey.parse().unwrap());
+
+        match self.client.analyze_syntax_list(request).await {
             Ok(response) => Ok(response.into_inner()),
-            Err(error) => Err(error),
+            Err(e) => Err(self.handle_grpc_error(e)),
         }
     }
-    /**
-    형태소 분석을 수행합니다.
 
-    Args:
-        content (str): 형태소 분석할 원문, 여러 문장일 경우에 개행문자로 줄바꿈을 하면 됩니다.
-        auto_split (bool, optional): 문장 자동 분리 여부, 기본값은 사용하지 않음.
-
-    Raises:
-        e: Error, 원격 호출시 예외가 발생할 수 있습니다.
-
-    Returns:
-        TokenizeResponse: 형태소 분석 결과
-    */
+    /// 토크나이즈를 수행합니다.
     pub async fn tokenize(
         &mut self,
         content: &str,
         auto_split: bool,
-    ) -> Result<TokenizeResponse, Status> {
-        let mut req = TokenizeRequest::default();
-        let mut document = Document::default();
-        document.content = content.to_string();
-        document.language = "ko_KR".to_string();
-        req.document = Some(document);
+    ) -> Result<TokenizeResponse> {
+        let req = TokenizeRequest {
+            document: Some(Document {
+                content: content.to_string(),
+                language: "ko_KR".to_string(),
+            }),
+            encoding_type: EncodingType::Utf32.into(),
+            auto_split_sentence: auto_split,
+            auto_spacing: false,
+        };
 
-        req.encoding_type = EncodingType::Utf32.into();
-        req.auto_split_sentence = auto_split;
-        match self.client.tokenize(tonic::Request::new(req)).await {
+        let mut request = Request::new(req);
+        request
+            .metadata_mut()
+            .insert("api-key", self.apikey.parse().unwrap());
+
+        match self.client.tokenize(request).await {
             Ok(response) => Ok(response.into_inner()),
-            Err(error) => Err(error),
+            Err(e) => Err(self.handle_grpc_error(e)),
         }
     }
 }
