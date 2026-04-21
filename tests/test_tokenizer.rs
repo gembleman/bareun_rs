@@ -187,34 +187,31 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // 로컬 테스트 서버는 API 키 검증을 하지 않으므로 실제 서버 테스트 시에만 실행
+    #[ignore] // 실제 서버 테스트 시에만 실행
     async fn test_exception_apikey_tokenizer() {
         // 잘못된 API 키로 연결 시도
-        let mut tokenizer = Tokenizer::new(
-            "invalid-api-key",
-            "10.3.8.44",
-            Some(5757),
-        )
-        .await
-        .unwrap(); // 연결 자체는 성공할 수 있음
+        let mut tokenizer = Tokenizer::new("invalid-api-key", "10.3.8.44", Some(5757))
+            .await
+            .unwrap(); // 연결 자체는 성공할 수 있음
 
         // API 키가 잘못되면 실제 요청 시 에러 발생
         let result = tokenizer.seg(TEST_STR, true, false, false).await;
 
         // 잘못된 API 키로 인한 에러 발생 확인
-        assert!(result.is_err(), "Expected error for invalid API key during request");
+        assert!(
+            result.is_err(),
+            "Expected error for invalid API key during request"
+        );
     }
 
     #[tokio::test]
     async fn test_exception_host_tokenizer() {
-        let tokenizer_result = Tokenizer::new(
-            "appppppiiii",
-            "127.0.0.1:5656",
-            Some(5656),
-        )
-        .await;
+        let tokenizer_result = Tokenizer::new("appppppiiii", "127.0.0.1:5656", Some(5656)).await;
 
         // 잘못된 호스트 형식으로 인한 연결 에러 확인
-        assert!(tokenizer_result.is_err(), "Expected error for invalid host format");
+        assert!(
+            tokenizer_result.is_err(),
+            "Expected error for invalid host format"
+        );
     }
 }
