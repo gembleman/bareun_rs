@@ -1,6 +1,6 @@
 [package]
 name = "bareun_rs"
-version = "1.7.2"
+version = "1.8.0"
 edition = "2024"
 license = "BSD-3-Clause"
 keywords = ["korean", "nlp", "tokenizer", "analyzer"]
