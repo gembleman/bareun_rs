@@ -178,6 +178,7 @@ impl BareunLanguageServiceClient {
         content: &str,
         auto_split: bool,
     ) -> Result<TokenizeResponse> {
+        #[allow(deprecated)]
         let req = TokenizeRequest {
             document: Some(Document {
                 content: content.to_string(),

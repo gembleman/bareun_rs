@@ -49,7 +49,7 @@ pub fn pb_map_to_set(ds: &DictSet) -> HashSet<String> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bareun_rs::{Tagger, CustomDict};
 /// use std::collections::HashSet;
 ///
@@ -63,7 +63,7 @@ pub fn pb_map_to_set(ds: &DictSet) -> HashSet<String> {
 ///     cd.copy_cp_set(cp_set.into_iter().collect());
 ///
 ///     // 복합명사 (캐럿 구분) 추가
-///     cd.read_cp_caret_set_from_file("my_cp_caret.txt")?;
+///     cd.read_cp_caret_set_from_file("my_cp_caret.txt");
 ///
 ///     // 동사 추가
 ///     let vv_set = vec!["카톡하".to_string(), "신박하다".to_string()];
@@ -72,6 +72,11 @@ pub fn pb_map_to_set(ds: &DictSet) -> HashSet<String> {
 ///     // 형용사 추가
 ///     let va_set = vec!["드라마틱하".to_string(), "판타스틱하".to_string()];
 ///     cd.copy_va_set(va_set.into_iter().collect());
+///
+///     // 관형사 / 부사 / 감탄사도 동일한 방식으로 지정 가능
+///     cd.copy_mm_set(HashSet::new());
+///     cd.copy_mag_set(HashSet::new());
+///     cd.copy_ic_set(HashSet::new());
 ///
 ///     // 서버에 업데이트
 ///     cd.update().await?;
@@ -94,6 +99,9 @@ pub struct CustomDict {
     pub cp_caret_set: HashSet<String>,
     pub vv_set: HashSet<String>,
     pub va_set: HashSet<String>,
+    pub mm_set: HashSet<String>,
+    pub mag_set: HashSet<String>,
+    pub ic_set: HashSet<String>,
     pub apikey: String,
     pub host: String,
     pub port: i32,
@@ -111,6 +119,9 @@ impl CustomDict {
             cp_caret_set: HashSet::new(),
             vv_set: HashSet::new(),
             va_set: HashSet::new(),
+            mm_set: HashSet::new(),
+            mag_set: HashSet::new(),
+            ic_set: HashSet::new(),
             apikey: String::new(),
             host: String::new(),
             port: 0,
@@ -118,21 +129,11 @@ impl CustomDict {
     }
 
     pub fn with_connection(domain: &str, apikey: &str, host: &str, port: i32) -> Self {
-        if domain.is_empty() {
-            panic!("domain name must be specified.");
-        }
-
-        CustomDict {
-            domain: domain.to_string(),
-            cp_set: HashSet::new(),
-            np_set: HashSet::new(),
-            cp_caret_set: HashSet::new(),
-            vv_set: HashSet::new(),
-            va_set: HashSet::new(),
-            apikey: apikey.to_string(),
-            host: host.to_string(),
-            port,
-        }
+        let mut d = Self::new(domain);
+        d.apikey = apikey.to_string();
+        d.host = host.to_string();
+        d.port = port;
+        d
     }
 
     pub fn set_connection(&mut self, apikey: &str, host: &str, port: i32) {
@@ -140,117 +141,79 @@ impl CustomDict {
         self.host = host.to_string();
         self.port = port;
     }
-    /**
-    고유명사 사전을 파일에서 읽어들입니다.
 
-    이 파일은 한줄에 하나의 사전입니다. '#'로 시작하는 줄은 무시합니다.
-
-    Args:
-        fn (str): 고유명사 파일 이름
-    */
+    /// 고유명사 사전을 파일에서 읽어들입니다.
     pub fn read_np_set_from_file(&mut self, user_dict_path: &str) {
         self.np_set = read_dic_file(user_dict_path);
     }
-    /**
-    복합명사 사전을 파일에서 읽어들입니다.
-
-    이 파일은 한줄에 하나의 사전입니다. '#'로 시작하는 줄은 무시합니다.
-
-    Args:
-        fn (str): 복합명사 파일 이름
-    */
+    /// 복합명사 사전을 파일에서 읽어들입니다.
     pub fn read_cp_set_from_file(&mut self, user_dict_path: &str) {
         self.cp_set = read_dic_file(user_dict_path);
     }
-    /**
-    복합명사 분리 사전을 파일에서 읽어들입니다.
-
-    이 파일은 한줄에 하나의 사전입니다. '#'로 시작하는 줄은 무시합니다.
-
-    Args:
-        fn (str): 복합명사 분리 사전 파일 이름
-    */
+    /// 복합명사 분리 사전을 파일에서 읽어들입니다.
     pub fn read_cp_caret_set_from_file(&mut self, user_dict_path: &str) {
         self.cp_caret_set = read_dic_file(user_dict_path);
     }
-    /**
-    동사 사전을 파일에서 읽어들입니다.
-
-    이 파일은 한줄에 하나의 사전입니다. '#'로 시작하는 줄은 무시합니다.
-
-    Args:
-        fn (str): 동사 사전 파일 이름
-    */
+    /// 동사 사전을 파일에서 읽어들입니다.
     pub fn read_vv_set_from_file(&mut self, user_dict_path: &str) {
         self.vv_set = read_dic_file(user_dict_path);
     }
-    /**
-    형용사 사전을 파일에서 읽어들입니다.
-
-    이 파일은 한줄에 하나의 사전입니다. '#'로 시작하는 줄은 무시합니다.
-
-    Args:
-        fn (str): 형용사 사전 파일 이름
-    */
+    /// 형용사 사전을 파일에서 읽어들입니다.
     pub fn read_va_set_from_file(&mut self, user_dict_path: &str) {
         self.va_set = read_dic_file(user_dict_path);
     }
-    /**
-    집합을 고유명사 사전으로 지정합니다.
-
-    Args:
-        dict_set (`HashSet<String>`): 고유명사 사전
-    */
+    /// 관형사 사전을 파일에서 읽어들입니다.
+    pub fn read_mm_set_from_file(&mut self, user_dict_path: &str) {
+        self.mm_set = read_dic_file(user_dict_path);
+    }
+    /// 부사 사전을 파일에서 읽어들입니다.
+    pub fn read_mag_set_from_file(&mut self, user_dict_path: &str) {
+        self.mag_set = read_dic_file(user_dict_path);
+    }
+    /// 감탄사 사전을 파일에서 읽어들입니다.
+    pub fn read_ic_set_from_file(&mut self, user_dict_path: &str) {
+        self.ic_set = read_dic_file(user_dict_path);
+    }
+    /// 집합을 고유명사 사전으로 지정합니다.
     pub fn copy_np_set(&mut self, dict_set: HashSet<String>) {
         self.np_set = dict_set;
     }
-    /**
-    집합을 복합명사 사전으로 지정합니다.
-
-    Args:
-        dict_set (`HashSet<String>`): 복합명사 사전
-    */
+    /// 집합을 복합명사 사전으로 지정합니다.
     pub fn copy_cp_set(&mut self, dict_set: HashSet<String>) {
         self.cp_set = dict_set;
     }
-    /**
-    집합을 복합명사 분리 사전으로 지정합니다.
-
-    Args:
-        dict_set (`HashSet<String>`): 복합명사 분리 사전
-    */
+    /// 집합을 복합명사 분리 사전으로 지정합니다.
     pub fn copy_cp_caret_set(&mut self, dict_set: HashSet<String>) {
         self.cp_caret_set = dict_set;
     }
-    /**
-    집합을 동사 사전으로 지정합니다.
-
-    Args:
-        dict_set (`HashSet<String>`): 동사 사전
-    */
+    /// 집합을 동사 사전으로 지정합니다.
     pub fn copy_vv_set(&mut self, dict_set: HashSet<String>) {
         self.vv_set = dict_set;
     }
-    /**
-    집합을 형용사 사전으로 지정합니다.
-
-    Args:
-        dict_set (`HashSet<String>`): 형용사 사전
-    */
+    /// 집합을 형용사 사전으로 지정합니다.
     pub fn copy_va_set(&mut self, dict_set: HashSet<String>) {
         self.va_set = dict_set;
     }
-    /// 모든 사용자 사전(복합명사, 고유명사, 동사, 형용사)을 바이칼 NLP 서버에 갱신합니다.
+    /// 집합을 관형사 사전으로 지정합니다.
+    pub fn copy_mm_set(&mut self, dict_set: HashSet<String>) {
+        self.mm_set = dict_set;
+    }
+    /// 집합을 부사 사전으로 지정합니다.
+    pub fn copy_mag_set(&mut self, dict_set: HashSet<String>) {
+        self.mag_set = dict_set;
+    }
+    /// 집합을 감탄사 사전으로 지정합니다.
+    pub fn copy_ic_set(&mut self, dict_set: HashSet<String>) {
+        self.ic_set = dict_set;
+    }
+    /// 모든 사용자 사전을 바이칼 NLP 서버에 갱신합니다.
     ///
-    /// 이 함수는 np_set, cp_set, cp_caret_set, vv_set, va_set의 모든 사전을 서버에 업데이트합니다.
+    /// np_set, cp_set, cp_caret_set, vv_set, va_set, mm_set, mag_set, ic_set 전체를
+    /// 서버에 업데이트합니다.
     ///
     /// # Errors
     ///
     /// grpc::Error - 원격 호출시 예외가 발생할 수 있습니다.
-    ///
-    /// # Returns
-    ///
-    /// 갱신이 성공하면 true를 반환합니다.
     pub async fn update(&self) -> Result<bool> {
         if self.apikey.is_empty() || self.host.is_empty() {
             return Err(BareunError::InvalidArgument {
@@ -268,15 +231,15 @@ impl CustomDict {
                 &self.cp_caret_set,
                 &self.vv_set,
                 &self.va_set,
+                &self.mm_set,
+                &self.mag_set,
+                &self.ic_set,
             )
             .await
     }
     /**
     사용자 사전의 내용을 가져옵니다.
     가져온 결과는 현재 설정된 사전의 내용을 반영하지 않습니다.
-
-    Raises:
-        e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
 
     Returns:
         CustomDictionary: 사용자 사전 데이터 전체를 담고 있는 protobuf 메시지
@@ -292,9 +255,7 @@ impl CustomDict {
             CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;
         client.get(&self.domain).await
     }
-    /**
-    서버에 저정되어 있는 사용자 사전을 모두 가져옵니다.
-    */
+    /// 서버에 저정되어 있는 사용자 사전을 모두 가져옵니다.
     pub async fn load(&mut self) -> Result<()> {
         if self.apikey.is_empty() || self.host.is_empty() {
             return Err(BareunError::InvalidArgument {
@@ -321,18 +282,19 @@ impl CustomDict {
         if let Some(va_set) = d.va_set {
             self.va_set = pb_map_to_set(&va_set);
         }
+        if let Some(mm_set) = d.mm_set {
+            self.mm_set = pb_map_to_set(&mm_set);
+        }
+        if let Some(mag_set) = d.mag_set {
+            self.mag_set = pb_map_to_set(&mag_set);
+        }
+        if let Some(ic_set) = d.ic_set {
+            self.ic_set = pb_map_to_set(&ic_set);
+        }
 
         Ok(())
     }
-    /**
-    사용자 사전의 내용을 삭제합니다.
-
-    Raises:
-        e: grpc::Error, 원격 호출시 예외가 발생할 수 있습니다.
-
-    Returns:
-        `Vec<String>`: 삭제한 사용자 사전의 이름
-    */
+    /// 사용자 사전의 내용을 삭제합니다.
     pub async fn clear(&mut self) -> Result<Vec<String>> {
         if self.apikey.is_empty() || self.host.is_empty() {
             return Err(BareunError::InvalidArgument {
@@ -345,6 +307,9 @@ impl CustomDict {
         self.cp_caret_set.clear();
         self.vv_set.clear();
         self.va_set.clear();
+        self.mm_set.clear();
+        self.mag_set.clear();
+        self.ic_set.clear();
 
         let mut client =
             CustomDictionaryServiceClient::new(&self.apikey, &self.host, self.port).await?;

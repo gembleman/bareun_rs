@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package bareun;
 
-import "lang_common.proto";
+import "bareun/lang_common.proto";
 
 option go_package = "bareun.ai/lang/bareun/genproto/bareun;svc";
 option java_package = "ai.bareun.protos";
@@ -280,10 +280,10 @@ message TokenizeRequest {
   // The encoding type used by the API to calculate offsets.
   EncodingType encoding_type = 2;
 
-  // auto split sentence true이면 자동으로 문장 분리를 시도한다.
-  // 없으면 \n 을 기준으로 문장을 자른다.
+  // auto split sentence 옵션은 사용하지 않는다.
+  // 기본적으로 '\n' 을 기준으로 문장을 자른다.
   // 기본값은 false 이다.
-  bool auto_split_sentence = 3;
+  bool auto_split_sentence = 3 [deprecated = true];
 
   // 자동 띄어쓰기
   bool auto_spacing = 5;

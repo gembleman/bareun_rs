@@ -2,9 +2,13 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
 use tonic::{Request, Status};
 
 use crate::bareun::revision_service_client::RevisionServiceClient;
-use crate::bareun::{CorrectErrorRequest, CorrectErrorResponse};
+use crate::bareun::{
+    CorrectErrorRequest, CorrectErrorResponse, StreamCorrectErrorRequest,
+    StreamCorrectErrorResponse,
+};
 use crate::constants::{CA_BUNDLE, MAX_MESSAGE_LENGTH};
 use crate::error::{BareunError, Result};
+use tonic::Streaming;
 
 fn resolve_port(host: &str, port: Option<u16>) -> u16 {
     if let Some(p) = port {
@@ -108,6 +112,23 @@ impl BareunRevisionServiceClient {
             .insert("api-key", self.apikey.parse().unwrap());
 
         match self.client.correct_error(req).await {
+            Ok(response) => Ok(response.into_inner()),
+            Err(e) => Err(self.handle_grpc_error(e)),
+        }
+    }
+
+    /// 스트리밍 맞춤법 교정을 위한 gRPC 호출
+    ///
+    /// 서버에서 첫 번째 응답과 이후의 thinking revision 업데이트를 스트림으로 받는다.
+    pub async fn stream_correct_error(
+        &mut self,
+        request: StreamCorrectErrorRequest,
+    ) -> Result<Streaming<StreamCorrectErrorResponse>> {
+        let mut req = Request::new(request);
+        req.metadata_mut()
+            .insert("api-key", self.apikey.parse().unwrap());
+
+        match self.client.stream_correct_error(req).await {
             Ok(response) => Ok(response.into_inner()),
             Err(e) => Err(self.handle_grpc_error(e)),
         }

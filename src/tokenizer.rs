@@ -268,6 +268,12 @@ impl Tokenizer {
         Ok(Tokenizer { client })
     }
 
+    /// 토크나이즈 요청을 수행한다.
+    ///
+    /// Args:
+    ///     phrase: 분석할 문장
+    ///     auto_split: proto상 deprecated. 서버는 '\n' 기준 문장 분리를 기본으로 수행하므로
+    ///                 이 값은 무시된다. 호환성을 위해 시그니처는 유지한다.
     pub async fn tokenize(&mut self, phrase: &str, auto_split: bool) -> Result<Tokenized> {
         if phrase.is_empty() {
             eprintln!("OOPS, no sentences.");
